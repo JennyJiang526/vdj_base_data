@@ -2,33 +2,35 @@ pipeline {
     agent any
 
     parameters {
-        string(name: 'STUDY_ID', defaultValue: 'PRJ_TEST', description: 'Study / Project ID to download')
-        choice(name: 'TASK', choices: ['download', 'api_test', 'both'], description: 'Select task to run')
-
-        booleanParam(name: 'Refresh', defaultValue: false, description: 'Set to true to force Jenkins to reload the Jenkinsfile and exit.')
+        string(name: 'STUDY_ID', defaultValue: 'PRJ_TEST', description: 'Study / Project ID')
+        choice(name: 'TASK', choices: ['download', 'api_test', 'both'], description: 'Task to run')
+        booleanParam(name: 'Refresh', defaultValue: false, description: 'Reload Jenkinsfile and exit')
     }
 
     environment {
-        IG_SERVER = credentials('igserver_user')
-        IG_SERVER_URL = 'http://127.0.0.1:5000'   // Update to your igserver's actual URL
+        IG_SERVER = credentials('igserver_user')   // ssh: user@host
+        REMOTE_DIR = '/mnt/data9/projects/Yaari_lab/vdjbase_data/'             // igserver 上代码目录
 
-        PYTHON = 'python3'
-        BASE_DIR = '/mnt/data9/projects/Yaari_lab/test'
         API_SCRIPT = 'api_test.py'
         DOWNLOAD_SCRIPT = 'download_repertoires_and_metadata.py'
     }
 
-
     stages {
+
+        // =========================
+        // Refresh
+        // =========================
         stage('Refresh Jenkinsfile') {
             when { expression { return params.Refresh == true } }
             steps {
-                echo "Refreshing Jenkinsfile and exiting pipeline - Setting Build to SUCCESS"
+                echo "Refreshing Jenkinsfile and exiting"
                 script { currentBuild.result = 'SUCCESS' }
             }
         }
 
-
+        // =========================
+        // Checkout (local copy)
+        // =========================
         stage('Checkout Code') {
             steps {
                 echo 'Cloning repository...'
@@ -36,25 +38,53 @@ pipeline {
             }
         }
 
-        stage('Setup Python') {
+        // =========================
+        // Sync code to igserver
+        // =========================
+        stage('Sync Code to IG Server') {
             steps {
-                sh '''
-                    python3 --version
-                    if ! python3 -m pip --version > /dev/null 2>&1; then
-                        echo "pip not found, installing..."
-                        sudo apt-get update
-                        sudo apt-get install -y python3-pip
-                    fi
-
-                    python3 -m pip install --upgrade pip
-                    python3 -m pip install --upgrade pip
-                    python3 -m pip install -r requirements.txt
-                '''
+                sshagent(credentials: ['igserver_user']) {
+                    sh '''
+                    ssh -o StrictHostKeyChecking=no $IG_SERVER "mkdir -p ${REMOTE_DIR}"
+                    
+                    scp -r -o StrictHostKeyChecking=no * $IG_SERVER:${REMOTE_DIR}/
+                    '''
+                }
             }
         }
 
         // =========================
-        // (1) API TEST TASK
+        // Setup Python (REMOTE)
+        // =========================
+        stage('Setup Python on IG Server') {
+            steps {
+                sshagent(credentials: ['igserver_user']) {
+                    sh '''
+                    ssh -o StrictHostKeyChecking=no $IG_SERVER "
+                        cd ${REMOTE_DIR}
+
+                        python3 --version
+
+                        # create venv if not exists
+                        if [ ! -d venv ]; then
+                            python3 -m venv venv
+                        fi
+
+                        source venv/bin/activate
+
+                        pip install --upgrade pip
+
+                        if [ -f requirements.txt ]; then
+                            pip install -r requirements.txt
+                        fi
+                    "
+                    '''
+                }
+            }
+        }
+
+        // =========================
+        // API TEST (REMOTE)
         // =========================
         stage('API Health Check') {
             when {
@@ -64,15 +94,21 @@ pipeline {
                 }
             }
             steps {
-                echo 'Running API health check...'
-                sh """
-                    ${PYTHON} ${API_SCRIPT}
-                """
+                echo 'Running API test on igserver...'
+                sshagent(credentials: ['igserver_user']) {
+                    sh '''
+                    ssh -o StrictHostKeyChecking=no $IG_SERVER "
+                        cd ${REMOTE_DIR}
+                        source venv/bin/activate
+                        python3 ${API_SCRIPT}
+                    "
+                    '''
+                }
             }
         }
 
         // =========================
-        // (2) DOWNLOAD TASK
+        // DOWNLOAD TASK (REMOTE)
         // =========================
         stage('Download Study Data') {
             when {
@@ -82,56 +118,41 @@ pipeline {
                 }
             }
             steps {
-                script {
-                    def projectDir = "${BASE_DIR}/${params.STUDY_ID}"
-
-                    echo "Creating project directory: ${projectDir}"
-
+                echo "Downloading study ${params.STUDY_ID} on igserver..."
+                sshagent(credentials: ['igserver_user']) {
                     sh """
-                        mkdir -p ${projectDir}/metadata
-                        mkdir -p ${projectDir}/sequences
-                        mkdir -p ${projectDir}/runs
-                    """
-
-                    echo "Downloading data for study: ${params.STUDY_ID} from ${IG_SERVER_URL} to ${projectDir}"
-
-                    sh """
-                        ${PYTHON} -c "
-                        import os, sys
-                        os.environ['GEVENT_SUPPORT'] = 'True'
-                        sys.path.insert(0, '.')
-                        from collect import collect_repertoires_and_count_rearrangements, download_study
-                        import pandas as pd
-
-                        study_id = '${params.STUDY_ID}'
-                        outdir   = '${projectDir}'
-                        repo_url = '${IG_SERVER_URL}'
-
-                        repo_df = pd.DataFrame([repo_url], columns=['URL'])
-                        print(f'Querying {repo_url} for study: {study_id}')
-                        results = collect_repertoires_and_count_rearrangements(repo_df, study_id)
-
-                        repertoires = results.get('Repertoire', [])
-                        if repertoires:
-                            print(f'Found {len(repertoires)} repertoire(s). Starting download...')
-                            resp = download_study(study_id, repertoires, outdir)
-                            if resp:
-                                print(f'Download initiated. Downloader ID: {resp.get(\\\"downloader_id\\\")}')
-                            else:
-                                print('Download failed: ' + str(resp))
-                            sys.exit(0 if resp else 1)
-                        else:
-                            print(f'No repertoires found for study: {study_id}')
-                            sys.exit(1)
-                        "
+                    ssh -o StrictHostKeyChecking=no $IG_SERVER "
+                        cd ${REMOTE_DIR}
+                        source venv/bin/activate
+                        python3 ${DOWNLOAD_SCRIPT} --study ${params.STUDY_ID}
+                    "
                     """
                 }
             }
         }
 
+        // =========================
+        // Fetch Results
+        // =========================
+        stage('Fetch Results') {
+            steps {
+                sshagent(credentials: ['igserver_user']) {
+                    sh '''
+                    echo "Fetching results from igserver..."
+
+                    scp -o StrictHostKeyChecking=no \
+                        $IG_SERVER:${REMOTE_DIR}/api_health_results.json . || true
+                    '''
+                }
+            }
+        }
+
+        // =========================
+        // Archive
+        // =========================
         stage('Archive Results') {
             steps {
-                archiveArtifacts artifacts: '**/*.json', fingerprint: true
+                archiveArtifacts artifacts: '**/*.json', allowEmptyArchive: true
             }
         }
     }
@@ -140,14 +161,20 @@ pipeline {
         success {
             echo 'Pipeline succeeded!'
         }
+
         failure {
             echo 'Pipeline failed!'
 
             sh '''
-                echo "---- API RESULTS ----"
-                cat api_health_results.json || true
+            echo "---- API RESULTS ----"
+            if [ -f api_health_results.json ]; then
+                cat api_health_results.json
+            else
+                echo "No API results found"
+            fi
             '''
         }
+
         always {
             echo 'Pipeline finished.'
         }
