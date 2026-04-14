@@ -40,6 +40,13 @@ pipeline {
             steps {
                 sh '''
                     python3 --version
+                    if ! python3 -m pip --version > /dev/null 2>&1; then
+                        echo "pip not found, installing..."
+                        sudo apt-get update
+                        sudo apt-get install -y python3-pip
+                    fi
+
+                    python3 -m pip install --upgrade pip
                     python3 -m pip install --upgrade pip
                     python3 -m pip install -r requirements.txt
                 '''
@@ -90,33 +97,33 @@ pipeline {
 
                     sh """
                         ${PYTHON} -c "
-import os, sys
-os.environ['GEVENT_SUPPORT'] = 'True'
-sys.path.insert(0, '.')
-from collect import collect_repertoires_and_count_rearrangements, download_study
-import pandas as pd
+                        import os, sys
+                        os.environ['GEVENT_SUPPORT'] = 'True'
+                        sys.path.insert(0, '.')
+                        from collect import collect_repertoires_and_count_rearrangements, download_study
+                        import pandas as pd
 
-study_id = '${params.STUDY_ID}'
-outdir   = '${projectDir}'
-repo_url = '${IG_SERVER_URL}'
+                        study_id = '${params.STUDY_ID}'
+                        outdir   = '${projectDir}'
+                        repo_url = '${IG_SERVER_URL}'
 
-repo_df = pd.DataFrame([repo_url], columns=['URL'])
-print(f'Querying {repo_url} for study: {study_id}')
-results = collect_repertoires_and_count_rearrangements(repo_df, study_id)
+                        repo_df = pd.DataFrame([repo_url], columns=['URL'])
+                        print(f'Querying {repo_url} for study: {study_id}')
+                        results = collect_repertoires_and_count_rearrangements(repo_df, study_id)
 
-repertoires = results.get('Repertoire', [])
-if repertoires:
-    print(f'Found {len(repertoires)} repertoire(s). Starting download...')
-    resp = download_study(study_id, repertoires, outdir)
-    if resp:
-        print(f'Download initiated. Downloader ID: {resp.get(\\\"downloader_id\\\")}')
-    else:
-        print('Download failed: ' + str(resp))
-    sys.exit(0 if resp else 1)
-else:
-    print(f'No repertoires found for study: {study_id}')
-    sys.exit(1)
-"
+                        repertoires = results.get('Repertoire', [])
+                        if repertoires:
+                            print(f'Found {len(repertoires)} repertoire(s). Starting download...')
+                            resp = download_study(study_id, repertoires, outdir)
+                            if resp:
+                                print(f'Download initiated. Downloader ID: {resp.get(\\\"downloader_id\\\")}')
+                            else:
+                                print('Download failed: ' + str(resp))
+                            sys.exit(0 if resp else 1)
+                        else:
+                            print(f'No repertoires found for study: {study_id}')
+                            sys.exit(1)
+                        "
                     """
                 }
             }
