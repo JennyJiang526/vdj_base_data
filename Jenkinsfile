@@ -12,11 +12,11 @@ pipeline {
         IG_SERVER = credentials('igserver_user')
 
         PYTHON = 'python3'
-        BASE_DIR = '/mnt/data9/projects/Yaari_lab/test' 
+        BASE_DIR = '/mnt/data9/projects/Yaari_lab/test'
         API_SCRIPT = 'api_test.py'
-        DOWNLOAD_SCRIPT = 'download_repertoires_and_metadata.py' 
+        DOWNLOAD_SCRIPT = 'download_repertoires_and_metadata.py'
     }
-        
+
 
     stages {
         stage('Refresh Jenkinsfile') {
@@ -63,30 +63,6 @@ pipeline {
             }
         }
 
-        stage('Archive Results') {
-            steps {
-                archiveArtifacts artifacts: '**/*.json', fingerprint: true
-            }
-        }
-    
-
-    post {
-        success {
-            echo 'Pipeline succeeded!'
-        }
-        failure {
-            echo 'Pipeline failed!'
-
-            sh '''
-                echo "---- API RESULTS ----"
-                cat api_health_results.json || true
-            '''
-        }
-        always {
-            echo 'Pipeline finished.'
-        }
-    }
-
         // =========================
         // (2) DOWNLOAD TASK
         // =========================
@@ -119,4 +95,28 @@ pipeline {
                 }
             }
         }
+
+        stage('Archive Results') {
+            steps {
+                archiveArtifacts artifacts: '**/*.json', fingerprint: true
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Pipeline succeeded!'
+        }
+        failure {
+            echo 'Pipeline failed!'
+
+            sh '''
+                echo "---- API RESULTS ----"
+                cat api_health_results.json || true
+            '''
+        }
+        always {
+            echo 'Pipeline finished.'
+        }
+    }
 }
