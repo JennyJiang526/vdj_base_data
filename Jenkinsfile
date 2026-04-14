@@ -10,6 +10,7 @@ pipeline {
 
     environment {
         IG_SERVER = credentials('igserver_user')
+        IG_SERVER_URL = 'http://127.0.0.1:5000'   // Update to your igserver's actual URL
 
         PYTHON = 'python3'
         BASE_DIR = '/mnt/data9/projects/Yaari_lab/test'
@@ -40,7 +41,7 @@ pipeline {
                 sh '''
                     python3 --version
                     python3 -m pip install --upgrade pip
-                    python3 -m pip install requests pandas
+                    python3 -m pip install -r requirements.txt
                 '''
             }
         }
@@ -85,12 +86,37 @@ pipeline {
                         mkdir -p ${projectDir}/runs
                     """
 
-                    echo "Downloading data for study: ${params.STUDY_ID}"
+                    echo "Downloading data for study: ${params.STUDY_ID} from ${IG_SERVER_URL} to ${projectDir}"
 
                     sh """
-                        ${PYTHON} ${DOWNLOAD_SCRIPT} \
-                        --study_id ${params.STUDY_ID} \
-                        --output_dir ${projectDir}
+                        ${PYTHON} -c "
+import os, sys
+os.environ['GEVENT_SUPPORT'] = 'True'
+sys.path.insert(0, '.')
+from collect import collect_repertoires_and_count_rearrangements, download_study
+import pandas as pd
+
+study_id = '${params.STUDY_ID}'
+outdir   = '${projectDir}'
+repo_url = '${IG_SERVER_URL}'
+
+repo_df = pd.DataFrame([repo_url], columns=['URL'])
+print(f'Querying {repo_url} for study: {study_id}')
+results = collect_repertoires_and_count_rearrangements(repo_df, study_id)
+
+repertoires = results.get('Repertoire', [])
+if repertoires:
+    print(f'Found {len(repertoires)} repertoire(s). Starting download...')
+    resp = download_study(study_id, repertoires, outdir)
+    if resp:
+        print(f'Download initiated. Downloader ID: {resp.get(\\\"downloader_id\\\")}')
+    else:
+        print('Download failed: ' + str(resp))
+    sys.exit(0 if resp else 1)
+else:
+    print(f'No repertoires found for study: {study_id}')
+    sys.exit(1)
+"
                     """
                 }
             }
