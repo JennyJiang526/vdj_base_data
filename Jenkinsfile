@@ -4,21 +4,30 @@ pipeline {
     parameters {
         string(name: 'STUDY_ID', defaultValue: 'PRJ_TEST', description: 'Study / Project ID to download')
         choice(name: 'TASK', choices: ['download', 'api_test', 'both'], description: 'Select task to run')
+
+        booleanParam(name: 'Refresh', defaultValue: false, description: 'Set to true to force Jenkins to reload the Jenkinsfile and exit.')
     }
 
     environment {
+        IG_SERVER = credentials('igserver_user')
+
         PYTHON = 'python3'
         BASE_DIR = '/mnt/data9/projects/Yaari_lab/test' 
         API_SCRIPT = 'api_test.py'
         DOWNLOAD_SCRIPT = 'download_repertoires_and_metadata.py' 
     }
-
-    options {
-        timestamps()
-    }
-
+        
 
     stages {
+        stage('Refresh Jenkinsfile') {
+            when { expression { return params.Refresh == true } }
+            steps {
+                echo "Refreshing Jenkinsfile and exiting pipeline - Setting Build to SUCCESS"
+                script { currentBuild.result = 'SUCCESS' }
+            }
+        }
+
+
         stage('Checkout Code') {
             steps {
                 echo 'Cloning repository...'
@@ -59,7 +68,7 @@ pipeline {
                 archiveArtifacts artifacts: '**/*.json', fingerprint: true
             }
         }
-    }
+    
 
     post {
         success {
