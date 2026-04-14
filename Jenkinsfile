@@ -119,7 +119,7 @@ pipeline {
             }
             steps {
                 echo "Downloading study ${params.STUDY_ID} on igserver..."
-                sshagent(credentials: ['igserver_user']) {
+                sshagent(credentials: ['igserver']) {
                     sh """
                     ssh -o StrictHostKeyChecking=no $IG_SERVER "
                         cd ${REMOTE_DIR}
