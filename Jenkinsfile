@@ -39,8 +39,8 @@ pipeline {
             steps {
                 sh '''
                     python3 --version
-                    pip3 install --upgrade pip
-                    pip3 install requests pandas
+                    python3 -m pip install --upgrade pip
+                    python3 -m pip install requests pandas
                 '''
             }
         }
