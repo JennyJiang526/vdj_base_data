@@ -8,8 +8,8 @@ pipeline {
     }
 
     environment {
-        IG_SERVER = credentials('igserver_user')   // ssh: user@host
-        REMOTE_DIR = '/mnt/data9/projects/Yaari_lab/vdjbase_data/'             // igserver 上代码目录
+        IG_SERVER = credentials('igserver_user')  
+        REMOTE_DIR = '/mnt/data9/projects/Yaari_lab/vdjbase_data/'           
 
         API_SCRIPT = 'api_test.py'
         DOWNLOAD_SCRIPT = 'download_repertoires_and_metadata.py'
@@ -43,7 +43,7 @@ pipeline {
         // =========================
         stage('Sync Code to IG Server') {
             steps {
-                sshagent(credentials: ['igserver_user']) {
+                sshagent(credentials: ['igserver']) {
                     sh '''
                     ssh -o StrictHostKeyChecking=no $IG_SERVER "mkdir -p ${REMOTE_DIR}"
                     
@@ -58,7 +58,7 @@ pipeline {
         // =========================
         stage('Setup Python on IG Server') {
             steps {
-                sshagent(credentials: ['igserver_user']) {
+                sshagent(credentials: ['igserver']) {
                     sh '''
                     ssh -o StrictHostKeyChecking=no $IG_SERVER "
                         cd ${REMOTE_DIR}
@@ -95,7 +95,7 @@ pipeline {
             }
             steps {
                 echo 'Running API test on igserver...'
-                sshagent(credentials: ['igserver_user']) {
+                sshagent(credentials: ['igserver']) {
                     sh '''
                     ssh -o StrictHostKeyChecking=no $IG_SERVER "
                         cd ${REMOTE_DIR}
@@ -136,7 +136,7 @@ pipeline {
         // =========================
         stage('Fetch Results') {
             steps {
-                sshagent(credentials: ['igserver_user']) {
+                sshagent(credentials: ['igserver']) {
                     sh '''
                     echo "Fetching results from igserver..."
 
@@ -144,15 +144,6 @@ pipeline {
                         $IG_SERVER:${REMOTE_DIR}/api_health_results.json . || true
                     '''
                 }
-            }
-        }
-
-        // =========================
-        // Archive
-        // =========================
-        stage('Archive Results') {
-            steps {
-                archiveArtifacts artifacts: '**/*.json', allowEmptyArchive: true
             }
         }
     }
