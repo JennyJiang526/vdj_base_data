@@ -124,8 +124,8 @@ pipeline {
                             return (u or '').rstrip('/').lower()
 
                         def _is_unhealthy(info):
-                            """Return True if the health-check result for an API indicates it is
-                            unreachable / has a connection error / is otherwise unusable."""
+                            '''Return True if the health-check result for an API indicates it is
+                            unreachable / has a connection error / is otherwise unusable.'''
                             if info is None:
                                 return True
                             if isinstance(info, bool):
