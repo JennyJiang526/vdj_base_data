@@ -296,7 +296,7 @@ pipeline {
                         errors = []
 
                         def find_one(sample, exts):
-                            """Find a real file matching `sample` prefix and one of the candidate extensions."""
+                            '''Find a real file matching sample prefix and one of the candidate extensions.'''
                             for ext in exts:
                                 # Exact match
                                 exact = os.path.join(study_dir, f"{sample}{ext}")
