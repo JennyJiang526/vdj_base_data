@@ -362,7 +362,7 @@ class BatchDownloader(threading.Thread):
         project_name = self.metadata['Repertoire'][0]['study']['study_id']
         print(f"finish to download {project_name}")
         time.sleep(5)
-        start_new_structure(project_name)
+        start_new_structure(project_name, os.path.dirname(self.output_dir))
 
     def cancel_download(self):
         with self.lock:

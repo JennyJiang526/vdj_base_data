@@ -7,10 +7,6 @@ import time
 from json_to_tsv import create_tsv_files
 from extract_sequences_from_ADC_annotations import start_extraction
 
-# Define the path where project data will be stored
-PROJECTS_PATH = r"/work/sequence_data_store/"
-#PROJECTS_PATH = r"C:\Users\yaniv\Desktop\work\yaarilab-genotype_tool-command_line\yaarilab-genotype_tool-command_line\sequence_data_store"
-
 def slugify(value, allow_unicode=False):
     # Converts a string into a slug format, which is easier to handle in file systems
     value = str(value)
@@ -25,9 +21,9 @@ def slugify(value, allow_unicode=False):
     # Replace repeated hyphens with a single hyphen
     return re.sub(r"[-]+", "-", value).strip("-_")
 
-def create_new_structure(project):
+def create_new_structure(project, projects_path):
     # Creates a new directory structure for a specific project
-    project_path = os.path.join(PROJECTS_PATH, project)
+    project_path = os.path.join(projects_path, project)
     metadata_file = os.path.join(project_path, "metadata.json")
     
     with open(metadata_file, 'r') as metadata_file:
@@ -74,9 +70,9 @@ def create_ids_json(repertoire_id, subject_id, sample_id, repertoire_folder_path
     
 
 
-def move_metadata_file(project):
+def move_metadata_file(project, projects_path):
     # Moves the metadata file of a project to a specific folder
-    project_path = os.path.join(PROJECTS_PATH, project)
+    project_path = os.path.join(projects_path, project)
     metadata_file_path = os.path.join(project_path, "metadata.json")
     remove_unicode_from_metadata(metadata_file_path)
     metadata_folder = os.path.join(project_path, "project_metadata")
@@ -95,15 +91,15 @@ def remove_unicode_from_metadata(file_path):
     with open(file_path, 'w', encoding='utf-8') as file:
         json.dump(data_dict, file, ensure_ascii=False, indent=4)
 
-def start_new_structure(project_name):
+def start_new_structure(project_name, projects_path):
     # Initiates the process of creating a new project structure
     print(f"creating new structure for {project_name}")
-    create_new_structure(project_name)
-    move_metadata_file(project_name)
+    create_new_structure(project_name, projects_path)
+    move_metadata_file(project_name, projects_path)
     print(f"finished creating new structure for {project_name}")
     time.sleep(2)
     print(f"start to exctract sequences from {project_name}")
-    start_extraction(project_name)
+    start_extraction(project_name, projects_path)
 
 
 
