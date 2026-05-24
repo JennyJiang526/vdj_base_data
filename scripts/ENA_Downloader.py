@@ -61,7 +61,10 @@ class ENA_Downloader():
 
     
     def download_file(self, url, path):
-        response = requests.get(url, stream=True)
+        # Accept-Encoding: identity prevents requests from transparently decompressing
+        # the response — FASTQ files are already .gz and must stay compressed on disk.
+        response = requests.get(url, stream=True, headers={'Accept-Encoding': 'identity'})
+        response.raise_for_status()
         with open(path, 'wb') as file:
             for chunk in response.iter_content(chunk_size=8192):
                 if chunk:
