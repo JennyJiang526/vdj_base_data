@@ -82,8 +82,8 @@ def main():
     repertoires = results.get('Repertoire', [])
 
     if not repertoires:
-        print(f"ERROR: No repertoires found for study {args.study_id}")
-        sys.exit(1)
+        print(f"WARNING: No repertoires found for study {args.study_id} in any AIRR API")
+        sys.exit(2)  # exit 2 = no data (soft); exit 1 = hard error; allows api-then-ena fallback
 
     print(f"Found {len(repertoires)} repertoire(s). Starting download...")
     resp = download_study(args.study_id, repertoires, args.outdir)

@@ -73,29 +73,47 @@ pipeline {
 
         // Reads api_health_results.json, skips FAILED endpoints, then downloads
         // repertoire + metadata for the requested study.
-        // Fails the pipeline if no healthy APIs remain or no data is found.
+        // Exit codes from download_repertoires.py:
+        //   0 = data found and downloaded
+        //   2 = no repertoires found (soft failure — triggers ENA fallback in api-then-ena mode)
+        //   1 = hard error (always fails the pipeline)
         stage('Download Study Data') {
             when { expression { return params.DOWNLOAD_MODE in ['api', 'api-then-ena'] } }
             steps {
                 echo "Downloading study ${params.STUDY_ID} from healthy APIs..."
-                sshagent(credentials: ['igserver']) {
-                    sh """
-                        ssh -o StrictHostKeyChecking=no \$IG_SERVER \
-                        "mkdir -p ${DOWNLOAD_DIR} && \
-                         cd ${REMOTE_DIR} && \
-                         python3 scripts/download_repertoires.py \
-                           --study-id ${params.STUDY_ID} \
-                           --outdir   ${DOWNLOAD_DIR}"
-                    """
+                script {
+                    sshagent(credentials: ['igserver']) {
+                        def cmd = """
+                            ssh -o StrictHostKeyChecking=no \$IG_SERVER \
+                            "mkdir -p ${DOWNLOAD_DIR} && \
+                             cd ${REMOTE_DIR} && \
+                             python3 scripts/download_repertoires.py \
+                               --study-id ${params.STUDY_ID} \
+                               --outdir   ${DOWNLOAD_DIR}"
+                        """
+                        if (params.DOWNLOAD_MODE == 'api-then-ena') {
+                            def exitCode = sh(script: cmd, returnStatus: true)
+                            if (exitCode == 1) {
+                                error("API download failed with a hard error — aborting")
+                            }
+                            env.API_FOUND_DATA = (exitCode == 0) ? 'true' : 'false'
+                            if (exitCode != 0) {
+                                echo "No repertoires found via API — will fall back to ENA"
+                            }
+                        } else {
+                            sh cmd
+                            env.API_FOUND_DATA = 'true'
+                        }
+                    }
                 }
             }
         }
 
         // Verifies that every downloaded file exists and is non-empty,
         // and that metadata.json is present and valid.
-        // Fails the pipeline immediately if anything is wrong.
+        // Skipped in api-then-ena mode when the API found no data (ENA handles it instead).
         stage('Validate Downloaded Data') {
-            when { expression { return params.DOWNLOAD_MODE in ['api', 'api-then-ena'] } }
+            when { expression { return params.DOWNLOAD_MODE in ['api', 'api-then-ena'] && env.API_FOUND_DATA == 'true' } }
             steps {
                 echo "Validating downloaded data for study ${params.STUDY_ID}..."
                 sshagent(credentials: ['igserver']) {
@@ -108,10 +126,16 @@ pipeline {
             }
         }
 
-        // Downloads FASTQ files from ENA into {DOWNLOAD_DIR}/{STUDY_ID}/raw_seq/.
-        // In api-then-ena mode, requires the AIRR metadata download to have run first.
+        // ena mode:          always runs.
+        // api-then-ena mode: only runs when the API found no repertoires (fallback).
+        // api mode:          never runs.
         stage('Download FASTQ from ENA') {
-            when { expression { return params.DOWNLOAD_MODE in ['ena', 'api-then-ena'] } }
+            when {
+                expression {
+                    return params.DOWNLOAD_MODE == 'ena' ||
+                           (params.DOWNLOAD_MODE == 'api-then-ena' && env.API_FOUND_DATA != 'true')
+                }
+            }
             steps {
                 echo "Downloading FASTQ files from ENA for study ${params.STUDY_ID}..."
                 sshagent(credentials: ['igserver']) {
@@ -120,8 +144,7 @@ pipeline {
                         "cd ${REMOTE_DIR} && \
                          python3 scripts/ENA_downloader_tool.py \
                            --project-name ${params.STUDY_ID} \
-                           --outdir       ${DOWNLOAD_DIR} \
-                           ${params.USE_SUBMITTED ? '--use-submitted' : ''}"
+                           --outdir       ${DOWNLOAD_DIR}"
                     """
                 }
             }
