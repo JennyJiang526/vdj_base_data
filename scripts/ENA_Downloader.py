@@ -10,11 +10,18 @@ class ENA_Downloader():
     """
     Downloads FASTQ (or submitted) files from ENA for a given project.
 
-    Reads the AIRR metadata.json that was already placed at
-    {projects_path}/{project_id}/project_metadata/metadata.json
-    to determine which ENA run accessions map to which subject/sample/repertoire,
-    then downloads the corresponding FASTQ files into
-    {projects_path}/{project_id}/raw_seq/{subject}/{sample}/{repertoire}/.
+    Two download modes are supported, chosen automatically at runtime:
+
+    AIRR-metadata mode (api-then-ena):
+        Reads {projects_path}/{project_id}/project_metadata/metadata.json
+        (written by the AIRR API download) to map ENA run accessions to
+        subject/sample/repertoire IDs, then saves files to:
+        {projects_path}/{project_id}/raw_seq/{subject}/{sample}/{repertoire}/
+
+    ENA-native mode (ena-only):
+        When no AIRR metadata is present, falls back to ENA's own
+        sample_accession and run_accession as the folder structure:
+        {projects_path}/{project_id}/raw_seq/{sample_accession}/{run_accession}/
 
     Args:
         project_id:    ENA/SRA project accession (e.g. PRJNA349143).
@@ -84,40 +91,72 @@ class ENA_Downloader():
         
         return metadata_path
 
+    def _get_file_urls(self, row, run_accession):
+        if not self.is_submitted:
+            return row['fastq_ftp'].split(';')
+        else:
+            return row['submitted_ftp'].split(';')
+
+    def _file_name(self, file_url, run_accession):
+        if not self.is_submitted:
+            return file_url.split('/')[-1]
+        return run_accession + ('_1.fastq.gz' if '_R1.fastq.gz' in file_url else '_2.fastq.gz')
+
     def download_repertoires(self):
+        """Download using AIRR metadata to map runs to subject/sample/repertoire folders."""
         response = requests.get(self.download_link)
         reader = csv.DictReader(response.text.splitlines(), delimiter='\t')
 
         for row in reader:
             run_accession = row['run_accession']
-            if not self.is_submitted:
-                fastq_files = row['fastq_ftp'].split(';')
-            else:
-                fastq_files = row['submitted_ftp'].split(';')
-            if run_accession in self.repertoires_metadata:
-                file = self.repertoires_metadata[run_accession]
-                download_dir = os.path.join(self.projects_path, self.project_id, 'raw_seq', file[0], file[1], file[2])
-                os.makedirs(download_dir, exist_ok=True)
+            if run_accession not in self.repertoires_metadata:
+                continue
+            file = self.repertoires_metadata[run_accession]
+            download_dir = os.path.join(self.projects_path, self.project_id, 'raw_seq', file[0], file[1], file[2])
+            os.makedirs(download_dir, exist_ok=True)
 
-                for file_url in fastq_files:
-                    if not self.is_submitted:
-                        file_name = file_url.split('/')[-1]
-                    else:
-                        if '_R1.fastq.gz' in file_url:
-                            file_name = run_accession + '_1.fastq.gz'
-                        else:
-                            file_name = run_accession + '_2.fastq.gz'
+            for file_url in self._get_file_urls(row, run_accession):
+                if not file_url:
+                    continue
+                file_name = self._file_name(file_url, run_accession)
+                file_path = os.path.join(download_dir, file_name)
+                if not os.path.exists(file_path):
+                    self.download_file("https://" + file_url, file_path)
+                    print(f"Downloaded {file_name} to {file_path}")
 
-                    file_path = os.path.join(download_dir, file_name)
-                    if not os.path.exists(file_path):
-                        self.download_file("https://" + file_url, file_path)
-                        print(f"Downloaded {file_name} to {file_path}")
+    def download_repertoires_by_sample(self):
+        """Download using ENA sample/run accessions as the folder structure.
+
+        Used in ena-only mode when no AIRR metadata is available.
+        Files go to: {projects_path}/{project_id}/raw_seq/{sample_accession}/{run_accession}/
+        """
+        response = requests.get(self.download_link)
+        reader = csv.DictReader(response.text.splitlines(), delimiter='\t')
+
+        for row in reader:
+            run_accession = row['run_accession']
+            sample_accession = row.get('sample_accession', run_accession)
+            download_dir = os.path.join(self.projects_path, self.project_id, 'raw_seq', sample_accession, run_accession)
+            os.makedirs(download_dir, exist_ok=True)
+
+            for file_url in self._get_file_urls(row, run_accession):
+                if not file_url:
+                    continue
+                file_name = self._file_name(file_url, run_accession)
+                file_path = os.path.join(download_dir, file_name)
+                if not os.path.exists(file_path):
+                    self.download_file("https://" + file_url, file_path)
+                    print(f"Downloaded {file_name} to {file_path}")
 
     def start_downloading(self):
+        self.find_link()
+        if not self.download_link:
+            raise RuntimeError(f"No ENA file link found for project {self.project_id}")
+
         try:
             self.open_metadata()
-            self.find_link()
+            print("AIRR metadata found — using subject/sample/repertoire folder structure")
             self.download_repertoires()
-        
-        except Exception as e:
-            print(e)
+        except Exception:
+            print("No AIRR metadata found — using ENA-native sample/run folder structure")
+            self.download_repertoires_by_sample()

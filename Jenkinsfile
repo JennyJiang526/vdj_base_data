@@ -2,10 +2,10 @@ pipeline {
     agent any
 
     parameters {
-        string(name: 'STUDY_ID', defaultValue: 'PRJNA349143', description: 'Study / Project ID')
-        booleanParam(name: 'Refresh', defaultValue: false, description: 'Reload Jenkinsfile and exit')
+        string(name: 'STUDY_ID', defaultValue: 'PRJNA338795', description: 'Study / Project ID')
         choice(name: 'DOWNLOAD_MODE', choices: ['api', 'ena', 'api-then-ena'], description: 'api: AIRR API only | ena: ENA FASTQ only | api-then-ena: AIRR API then ENA FASTQ')
-        booleanParam(name: 'USE_SUBMITTED', defaultValue: false, description: 'Use originally-submitted files instead of ENA-processed FASTQ (ENA modes only)')
+        // booleanParam(name: 'USE_SUBMITTED', defaultValue: false, description: 'Use originally-submitted files instead of ENA-processed FASTQ (ENA modes only)')
+        booleanParam(name: 'Refresh', defaultValue: false, description: 'Reload Jenkinsfile and exit')
     }
 
     environment {
