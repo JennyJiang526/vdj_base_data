@@ -109,26 +109,7 @@ pipeline {
             }
         }
 
-        // Verifies that every downloaded file exists and is non-empty,
-        // and that metadata.json is present and valid.
-        // Skipped in api-then-ena mode when the API found no data (ENA handles it instead).
-        stage('Validate Downloaded Data') {
-            when { expression { return params.DOWNLOAD_MODE in ['api', 'api-then-ena'] && env.API_FOUND_DATA == 'true' } }
-            steps {
-                echo "Validating downloaded data for study ${params.STUDY_ID}..."
-                sshagent(credentials: ['igserver']) {
-                    sh """
-                        ssh -o StrictHostKeyChecking=no \$IG_SERVER \
-                        "python3 ${REMOTE_DIR}/scripts/validate_data.py \
-                           --study-dir ${DOWNLOAD_DIR}/${params.STUDY_ID}"
-                    """
-                }
-            }
-        }
 
-        // ena mode:          always runs.
-        // api-then-ena mode: only runs when the API found no repertoires (fallback).
-        // api mode:          never runs.
         stage('Download FASTQ from ENA') {
             when {
                 expression {
@@ -145,6 +126,21 @@ pipeline {
                          python3 scripts/ENA_downloader_tool.py \
                            --project-name ${params.STUDY_ID} \
                            --outdir       ${DOWNLOAD_DIR}"
+                    """
+                }
+            }
+        }
+
+        // Runs after all downloads complete regardless of mode.
+        // Auto-detects what was downloaded (AIRR TSVs, ENA FASTQs, or both) and validates each.
+        stage('Validate Downloaded Data') {
+            steps {
+                echo "Validating downloaded data for study ${params.STUDY_ID}..."
+                sshagent(credentials: ['igserver']) {
+                    sh """
+                        ssh -o StrictHostKeyChecking=no \$IG_SERVER \
+                        "python3 ${REMOTE_DIR}/scripts/validate_data.py \
+                           --study-dir ${DOWNLOAD_DIR}/${params.STUDY_ID}"
                     """
                 }
             }
