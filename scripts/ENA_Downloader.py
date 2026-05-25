@@ -127,14 +127,29 @@ class ENA_Downloader():
                     self.download_file("https://" + file_url, file_path)
                     print(f"Downloaded {file_name} to {file_path}")
 
+    def _write_ena_metadata(self, records):
+        """Write metadata.json from ENA file report data to the project directory."""
+        project_path = os.path.join(self.projects_path, self.project_id)
+        metadata_path = os.path.join(project_path, 'metadata.json')
+        metadata = {
+            "study_id": self.project_id,
+            "source": "ENA",
+            "Repertoire": records
+        }
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        print(f"ENA metadata written to {metadata_path}")
+
     def download_repertoires_by_sample(self):
         """Download using ENA sample/run accessions as the folder structure.
 
         Used in ena-only mode when no AIRR metadata is available.
         Files go to: {projects_path}/{project_id}/raw_seq/{sample_accession}/{run_accession}/
+        Writes metadata.json to {projects_path}/{project_id}/ when done.
         """
         response = requests.get(self.download_link)
         reader = csv.DictReader(response.text.splitlines(), delimiter='\t')
+        records = []
 
         for row in reader:
             run_accession = row['run_accession']
@@ -142,6 +157,7 @@ class ENA_Downloader():
             download_dir = os.path.join(self.projects_path, self.project_id, 'raw_seq', sample_accession, run_accession)
             os.makedirs(download_dir, exist_ok=True)
 
+            downloaded_files = []
             for file_url in self._get_file_urls(row, run_accession):
                 if not file_url:
                     continue
@@ -150,6 +166,17 @@ class ENA_Downloader():
                 if not os.path.exists(file_path):
                     self.download_file("https://" + file_url, file_path)
                     print(f"Downloaded {file_name} to {file_path}")
+                downloaded_files.append(file_path)
+
+            records.append({
+                "run_accession":        run_accession,
+                "sample_accession":     sample_accession,
+                "experiment_accession": row.get('experiment_accession', ''),
+                "study_accession":      row.get('study_accession', self.project_id),
+                "files":                downloaded_files,
+            })
+
+        self._write_ena_metadata(records)
 
     def start_downloading(self):
         self.find_link()
