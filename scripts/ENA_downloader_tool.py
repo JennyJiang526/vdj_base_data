@@ -10,7 +10,7 @@ Usage:
     python3 scripts/ENA_downloader_tool.py \\
         --project-name PRJNA349143 \\
         --outdir /path/to/data \\
-        [--use-submitted]
+        [--use-original]
 """
 import argparse
 import sys
