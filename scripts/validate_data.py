@@ -13,9 +13,40 @@ Usage:
     python3 scripts/validate_data.py --study-dir /path/to/data/PRJNA349143
 """
 import argparse
+import gzip
 import json
 import os
 import sys
+
+# Files smaller than this are likely truncated downloads or error responses
+MIN_FILE_BYTES = 100
+
+
+def check_gzip_readable(fpath, errors):
+    """Peek inside a .gz file to confirm it contains actual data."""
+    try:
+        with gzip.open(fpath, "rb") as gz:
+            chunk = gz.read(1024)
+            if not chunk:
+                errors.append(f"gzip file is valid but empty inside: {fpath}")
+    except gzip.BadGzipFile:
+        errors.append(f"file is not a valid gzip archive: {fpath}")
+    except EOFError:
+        errors.append(f"gzip file appears truncated: {fpath}")
+    except Exception as e:
+        errors.append(f"could not read gzip file {fpath}: {e}")
+
+
+def check_file_size(fpath, errors):
+    """Check a file is non-zero and not suspiciously small."""
+    size = os.path.getsize(fpath)
+    if size == 0:
+        errors.append(f"empty file (0 bytes): {fpath}")
+        return False
+    if size < MIN_FILE_BYTES:
+        errors.append(f"suspiciously small file ({size} bytes), likely a failed download: {fpath}")
+        return False
+    return True
 
 
 def validate_airr(study_dir, errors):
@@ -30,33 +61,47 @@ def validate_airr(study_dir, errors):
         return
 
     for fpath in tsv_files:
-        if os.path.getsize(fpath) == 0:
-            errors.append(f"empty file: {fpath}")
+        if check_file_size(fpath, errors):
+            check_gzip_readable(fpath, errors)
 
-    meta_path = os.path.join(study_dir, 'metadata.json')
-    if not os.path.exists(meta_path):
-        # metadata may have been moved to project_metadata/ by create_projects_structure
-        meta_path = os.path.join(study_dir, 'project_metadata', 'metadata.json')
-    if not os.path.exists(meta_path):
-        errors.append("metadata.json not found (checked study root and project_metadata/)")
-    elif os.path.getsize(meta_path) == 0:
-        errors.append("metadata.json is empty")
+    # Check metadata.json — try study root, then project_metadata/
+    for candidate in [
+        os.path.join(study_dir, 'metadata.json'),
+        os.path.join(study_dir, 'project_metadata', 'metadata.json'),
+    ]:
+        if os.path.exists(candidate):
+            meta_path = candidate
+            break
     else:
-        try:
-            with open(meta_path) as f:
-                meta = json.load(f)
-            if not meta.get('Repertoire'):
-                errors.append("metadata.json contains no Repertoire entries")
-        except json.JSONDecodeError as e:
-            errors.append(f"metadata.json is not valid JSON: {e}")
+        errors.append("metadata.json not found (checked study root and project_metadata/)")
+        print(f"  AIRR: {len(tsv_files)} .tsv.gz file(s) found")
+        return
 
-    print(f"  AIRR: {len(tsv_files)} .tsv.gz file(s) found")
+    if not check_file_size(meta_path, errors):
+        print(f"  AIRR: {len(tsv_files)} .tsv.gz file(s) found")
+        return
+
+    try:
+        with open(meta_path) as f:
+            meta = json.load(f)
+        if not meta.get('Repertoire'):
+            errors.append("metadata.json contains no Repertoire entries")
+    except json.JSONDecodeError as e:
+        errors.append(f"metadata.json is not valid JSON: {e}")
+
+    print(f"  AIRR: {len(tsv_files)} .tsv.gz file(s) found, metadata.json OK")
 
 
 def validate_ena(study_dir, errors):
     raw_seq_dir = os.path.join(study_dir, 'raw_seq')
     if not os.path.isdir(raw_seq_dir):
         errors.append("raw_seq/ directory not found")
+        return
+
+    # Check the directory itself isn't just an empty shell
+    all_entries = list(os.scandir(raw_seq_dir))
+    if not all_entries:
+        errors.append("raw_seq/ directory exists but is completely empty")
         return
 
     fastq_files = [
@@ -66,12 +111,15 @@ def validate_ena(study_dir, errors):
         if f.endswith('.fastq.gz')
     ]
     if not fastq_files:
-        errors.append("no .fastq.gz files found under raw_seq/")
+        errors.append(
+            f"raw_seq/ exists and has {len(all_entries)} item(s) "
+            "but none are .fastq.gz files"
+        )
         return
 
     for fpath in fastq_files:
-        if os.path.getsize(fpath) == 0:
-            errors.append(f"empty file: {fpath}")
+        if check_file_size(fpath, errors):
+            check_gzip_readable(fpath, errors)
 
     print(f"  ENA:  {len(fastq_files)} .fastq.gz file(s) found")
 
