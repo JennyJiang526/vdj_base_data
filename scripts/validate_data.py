@@ -98,22 +98,21 @@ def validate_ena(study_dir, errors):
         errors.append("raw_seq/ directory not found")
         return
 
-    # Check the directory itself isn't just an empty shell
-    all_entries = list(os.scandir(raw_seq_dir))
-    if not all_entries:
-        errors.append("raw_seq/ directory exists but is completely empty")
-        return
-
-    fastq_files = [
+    # Check the directory itself isn't just an empty shell (no files anywhere in the tree)
+    all_files = [
         os.path.join(r, f)
         for r, _, files in os.walk(raw_seq_dir)
         for f in files
-        if f.endswith('.fastq.gz')
     ]
+    if not all_files:
+        errors.append("raw_seq/ directory exists but contains no files (checked recursively)")
+        return
+
+    fastq_files = [f for f in all_files if f.endswith('.fastq.gz')]
     if not fastq_files:
         errors.append(
-            f"raw_seq/ exists and has {len(all_entries)} item(s) "
-            "but none are .fastq.gz files"
+            f"raw_seq/ has {len(all_files)} file(s) recursively "
+            "but none are .fastq.gz — unexpected format"
         )
         return
 
@@ -122,7 +121,6 @@ def validate_ena(study_dir, errors):
             check_gzip_readable(fpath, errors)
 
     print(f"  ENA:  {len(fastq_files)} .fastq.gz file(s) found")
-
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
