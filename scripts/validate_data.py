@@ -104,8 +104,9 @@ def validate_ena(study_dir, errors):
         for r, _, files in os.walk(raw_seq_dir)
         for f in files
     ]
+
     if not all_files:
-        errors.append("raw_seq/ directory exists but contains no files (checked recursively)")
+        errors.append(f"directory exists but contains no files (checked recursively): {raw_seq_dir}")
         return
 
     fastq_files = [f for f in all_files if f.endswith('.fastq.gz')]
