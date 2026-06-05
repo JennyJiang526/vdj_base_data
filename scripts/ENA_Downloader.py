@@ -151,22 +151,30 @@ class ENA_Downloader():
         reader = csv.DictReader(response.text.splitlines(), delimiter='\t')
         records = []
 
+        total_downloaded = 0
+
         for row in reader:
             run_accession = row['run_accession']
             sample_accession = row.get('sample_accession', run_accession)
+
+            file_urls = [u for u in self._get_file_urls(row, run_accession) if u]
+            if not file_urls:
+                col = 'submitted_ftp' if self.is_submitted else 'fastq_ftp'
+                print(f"  WARNING: {col} is empty for run {run_accession} — skipping")
+                continue
+
             download_dir = os.path.join(self.projects_path, self.project_id, 'raw_seq', sample_accession, run_accession)
             os.makedirs(download_dir, exist_ok=True)
 
             downloaded_files = []
-            for file_url in self._get_file_urls(row, run_accession):
-                if not file_url:
-                    continue
+            for file_url in file_urls:
                 file_name = self._file_name(file_url, run_accession)
                 file_path = os.path.join(download_dir, file_name)
                 if not os.path.exists(file_path):
                     self.download_file("https://" + file_url, file_path)
                     print(f"Downloaded {file_name} to {file_path}")
                 downloaded_files.append(file_path)
+                total_downloaded += 1
 
             records.append({
                 "run_accession":        run_accession,
@@ -175,6 +183,16 @@ class ENA_Downloader():
                 "study_accession":      row.get('study_accession', self.project_id),
                 "files":                downloaded_files,
             })
+
+        if total_downloaded == 0:
+            alt_col = 'submitted_ftp' if not self.is_submitted else 'fastq_ftp'
+            alt_flag = '--use-submitted' if not self.is_submitted else '(remove --use-submitted)'
+            raise RuntimeError(
+                f"No files downloaded for {self.project_id}: all file URLs were empty. "
+                f"The files may only be available via '{alt_col}'. "
+                f"Try re-running with USE_SUBMITTED={'true' if not self.is_submitted else 'false'} "
+                f"(pass {alt_flag} to ENA_downloader_tool.py)."
+            )
 
         self._write_ena_metadata(records)
 
