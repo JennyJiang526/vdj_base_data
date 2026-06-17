@@ -4,7 +4,7 @@ pipeline {
     parameters {
         string(name: 'STUDY_ID', defaultValue: 'PRJNA338795', description: 'Study / Project ID')
         choice(name: 'DOWNLOAD_MODE', choices: ['api', 'ena', 'api-then-ena'], description: 'api: AIRR API only | ena: ENA FASTQ only | api-then-ena: AIRR API then ENA FASTQ')
-        booleanParam(name: 'USE_SUBMITTED', defaultValue: true, description: 'Use originally-submitted files instead of ENA-processed FASTQ (ENA modes only)')
+        booleanParam(name: 'USE_SUBMITTED', defaultValue: false, description: 'Use originally-submitted files (submitted_ftp) instead of ENA-processed FASTQ (fastq_ftp). Only check for studies submitted directly to ENA — SRA-mirrored studies (PRJNA...) should leave this unchecked.')
         booleanParam(name: 'Refresh', defaultValue: false, description: 'Reload Jenkinsfile and exit')
     }
 

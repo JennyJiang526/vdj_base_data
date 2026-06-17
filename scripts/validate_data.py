@@ -98,30 +98,45 @@ def validate_ena(study_dir, errors):
         errors.append("raw_seq/ directory not found")
         return
 
-    # Check the directory itself isn't just an empty shell (no files anywhere in the tree)
-    all_files = [
-        os.path.join(r, f)
-        for r, _, files in os.walk(raw_seq_dir)
-        for f in files
-    ]
-
-    if not all_files:
-        errors.append(f"directory exists but contains no files (checked recursively): {raw_seq_dir}")
+    srr_dirs = sorted(e.name for e in os.scandir(raw_seq_dir) if e.is_dir())
+    if not srr_dirs:
+        errors.append(f"raw_seq/ exists but contains no SRR subdirectories: {raw_seq_dir}")
         return
 
-    fastq_files = [f for f in all_files if f.endswith('.fastq.gz')]
-    if not fastq_files:
+    empty_srrs = []
+    fastq_files = []
+
+    for srr in srr_dirs:
+        srr_fastqs = [
+            os.path.join(root, f)
+            for root, _, files in os.walk(os.path.join(raw_seq_dir, srr))
+            for f in files
+            if f.endswith('.fastq.gz')
+        ]
+        if srr_fastqs:
+            fastq_files.extend(srr_fastqs)
+        else:
+            empty_srrs.append(srr)
+
+    if empty_srrs:
         errors.append(
-            f"raw_seq/ has {len(all_files)} file(s) recursively "
-            "but none are .fastq.gz — unexpected format"
+            f"{len(empty_srrs)} SRR folder(s) contain no .fastq.gz files: "
+            + ", ".join(empty_srrs)
         )
+
+    if not fastq_files:
+        errors.append(f"no .fastq.gz files found anywhere under {raw_seq_dir}")
         return
 
     for fpath in fastq_files:
         if check_file_size(fpath, errors):
             check_gzip_readable(fpath, errors)
 
-    print(f"  ENA:  {len(fastq_files)} .fastq.gz file(s) found")
+    summary = f"{len(fastq_files)} .fastq.gz file(s) across {len(srr_dirs)} SRR folder(s)"
+    if empty_srrs:
+        summary += f" ({len(empty_srrs)} empty)"
+    print(f"  ENA:  {summary}")
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
