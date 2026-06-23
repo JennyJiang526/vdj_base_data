@@ -15,13 +15,15 @@ class ENA_Downloader():
     AIRR-metadata mode (api-then-ena):
         Reads {projects_path}/{project_id}/project_metadata/metadata.json
         (written by the AIRR API download) to map ENA run accessions to
-        subject/sample/repertoire IDs, then saves files to:
-        {projects_path}/{project_id}/raw_seq/{subject}/{sample}/{repertoire}/
+        subject/sample IDs, then saves files to:
+        {projects_path}/{project_id}/raw_seq/{subject}/{sample}/{run_accession}/
 
     ENA-native mode (ena-only):
         When no AIRR metadata is present, falls back to ENA's own
         sample_accession and run_accession as the folder structure:
         {projects_path}/{project_id}/raw_seq/{sample_accession}/{run_accession}/
+        If the report has no sample_accession, files go directly to
+        {projects_path}/{project_id}/raw_seq/{run_accession}/
 
     Args:
         project_id:    ENA/SRA project accession (e.g. PRJNA349143).
@@ -77,9 +79,8 @@ class ENA_Downloader():
             for repetoire in data['Repertoire']:
                 subject_id = repetoire.get('subject').get('subject_id')
                 sample_id = repetoire.get('sample')[0].get('sample_id')
-                repertoire_id = repetoire.get('repertoire_id')
-                ena_file_name = repetoire.get('sample')[0].get('sequencing_files').get('filename')
-                self.repertoires_metadata[ena_file_name] = [subject_id,sample_id,repertoire_id]
+                run_accession = repetoire.get('sample')[0].get('sequencing_files').get('filename')
+                self.repertoires_metadata[run_accession] = [subject_id, sample_id]
         
         
     
@@ -106,7 +107,7 @@ class ENA_Downloader():
         return run_accession + ('_1.fastq.gz' if '_R1.fastq.gz' in file_url else '_2.fastq.gz')
 
     def download_repertoires(self):
-        """Download using AIRR metadata to map runs to subject/sample/repertoire folders."""
+        """Download using AIRR metadata to map runs to subject/sample/run folders."""
         response = requests.get(self.download_link)
         reader = csv.DictReader(response.text.splitlines(), delimiter='\t')
 
@@ -114,8 +115,8 @@ class ENA_Downloader():
             run_accession = row['run_accession']
             if run_accession not in self.repertoires_metadata:
                 continue
-            file = self.repertoires_metadata[run_accession]
-            download_dir = os.path.join(self.projects_path, self.project_id, 'raw_seq', file[0], file[1], file[2])
+            subject_id, sample_id = self.repertoires_metadata[run_accession]
+            download_dir = os.path.join(self.projects_path, self.project_id, 'raw_seq', subject_id, sample_id, run_accession)
             os.makedirs(download_dir, exist_ok=True)
 
             for file_url in self._get_file_urls(row, run_accession):
@@ -145,6 +146,9 @@ class ENA_Downloader():
 
         Used in ena-only mode when no AIRR metadata is available.
         Files go to: {projects_path}/{project_id}/raw_seq/{sample_accession}/{run_accession}/
+        When the report has no sample_accession column (some ENA-FASTQ-FILES
+        reports omit it), files go directly to raw_seq/{run_accession}/ instead
+        of duplicating the run accession as both folder levels.
         Writes metadata.json to {projects_path}/{project_id}/ when done.
         """
         response = requests.get(self.download_link)
@@ -155,7 +159,7 @@ class ENA_Downloader():
 
         for row in reader:
             run_accession = row['run_accession']
-            sample_accession = row.get('sample_accession', run_accession)
+            sample_accession = row.get('sample_accession')
 
             file_urls = [u for u in self._get_file_urls(row, run_accession) if u]
             if not file_urls:
@@ -163,7 +167,10 @@ class ENA_Downloader():
                 print(f"  WARNING: {col} is empty for run {run_accession} — skipping")
                 continue
 
-            download_dir = os.path.join(self.projects_path, self.project_id, 'raw_seq', sample_accession, run_accession)
+            if sample_accession and sample_accession != run_accession:
+                download_dir = os.path.join(self.projects_path, self.project_id, 'raw_seq', sample_accession, run_accession)
+            else:
+                download_dir = os.path.join(self.projects_path, self.project_id, 'raw_seq', run_accession)
             os.makedirs(download_dir, exist_ok=True)
 
             downloaded_files = []
