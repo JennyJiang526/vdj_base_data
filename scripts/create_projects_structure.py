@@ -48,23 +48,23 @@ def create_new_structure(project, projects_path):
 
                 # Move repertoire files to the corresponding run folder, matching the
                 # subject/sample/run layout used by the ENA FASTQ download (raw_seq/)
-                run_accession = slugify(get_run_accession(repertoire))
-                repertoire_folder_path = os.path.join(sample_id_folder_path, run_accession)
+                run_id = slugify(get_run_id(repertoire))
+                repertoire_folder_path = os.path.join(sample_id_folder_path, run_id)
                 if not os.path.isdir(repertoire_folder_path):
                     os.mkdir(repertoire_folder_path)
                 repertoire_path = os.path.join(project_path, repertoire["repertoire_id"] + ".tsv.gz")
-                create_ids_json(repertoire["repertoire_id"], subject_id, sample_id, run_accession, repertoire_folder_path)
+                create_ids_json(repertoire["repertoire_id"], subject_id, sample_id, run_id, repertoire_folder_path)
                 shutil.move(repertoire_path, repertoire_folder_path)
 
 
-def get_run_accession(repertoire):
-    # Same field ENA_Downloader.py uses to match AIRR metadata against ENA run accessions.
-    # Falls back to repertoire_id for repositories that don't populate sequencing_files.
-    sequencing_files = repertoire["sample"][0].get("sequencing_files") or {}
-    return sequencing_files.get("filename") or repertoire["repertoire_id"]
+def get_run_id(repertoire):
+    # AIRR repositories don't always populate sequencing_run_id; fall back to
+    # sample_id so every repertoire still lands in a run folder.
+    sample = repertoire["sample"][0]
+    return sample.get("sequencing_run_id") or sample["sample_id"]
 
 
-def create_ids_json(repertoire_id, subject_id, sample_id, run_accession, repertoire_folder_path):
+def create_ids_json(repertoire_id, subject_id, sample_id, run_id, repertoire_folder_path):
     # Named per repertoire_id since multiple repertoires (e.g. heavy/light chain)
     # can share the same run folder
     json_path = os.path.join(repertoire_folder_path, f'{repertoire_id}.json')
@@ -73,7 +73,7 @@ def create_ids_json(repertoire_id, subject_id, sample_id, run_accession, reperto
         "repertoire_id": repertoire_id,
         "subject_id": subject_id,
         "sample_id": sample_id,
-        "run_accession": run_accession
+        "sequencing_run_id": run_id
     }
 
     # Write the dictionary to a JSON file at the specified path
